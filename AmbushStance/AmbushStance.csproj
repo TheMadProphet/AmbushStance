@@ -293,6 +293,7 @@
     <Compile Include="Patches\CenterExclusionDeploymentPatch.cs"/>
     <Compile Include="Patches\ForceDeploymentScreenPatch.cs"/>
     <Compile Include="Patches\ForcePlayerAsAmbusherPatch.cs"/>
+    <Compile Include="Patches\HideMissionDeploymentBoundaryMarker.cs" />
     <Compile Include="Patches\InjectAmbushViewsPatch.cs"/>
     <Compile Include="Patches\ShowEnemyDuringDeploymentPatch.cs"/>
     <Compile Include="Patches\PlayerAgentDeploymentPatch.cs"/>
