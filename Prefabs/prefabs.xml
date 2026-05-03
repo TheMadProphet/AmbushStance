@@ -1,0 +1,20 @@
+<prefabs>
+	<game_entity name="deploy_marker_red" old_prefab_name="">
+		<flags>
+			<flag name="not_affected_by_season" value="true"/>
+			<flag name="align_rotation_to_terrain" value="true"/>
+		</flags>
+		<visibility_masks>
+			<visibility_mask name="no_shadow" value="true"/>
+		</visibility_masks>
+		<transform position="18.535, 15.126, 1.000" rotation_euler="0.000, 0.000, 0.000" scale="1.000, 0.250, 1.000"/>
+		<physics shape="bo_bd_cloth_a"/>
+		<components>
+			<meta_mesh_component name="bd_cloth_khuzait_b">
+				<mesh name="bd_cloth_khuzait_b.11" material="red_self_illumination"/>
+				<mesh name="bd_cloth_khuzait_b.lod3.11" material="red_self_illumination"/>
+			</meta_mesh_component>
+		</components>
+	</game_entity>
+</prefabs>
+
