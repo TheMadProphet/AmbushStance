@@ -421,3 +421,6 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 **/.claude/*
+CLAUDE.md
+.mcp.json
+docs/
