@@ -1,15 +1,12 @@
 using System.Collections.Generic;
-using TaleWorlds.Core;
 using TaleWorlds.Engine;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
-using TaleWorlds.MountAndBlade.View;
 using TaleWorlds.MountAndBlade.View.MissionViews;
-using TaleWorlds.MountAndBlade.View.Tableaus.Thumbnails;
 
 namespace AmbushStance.Deployment;
 
-// Draws swallowtail banner flags around the center exclusion zone during deployment,
+// Draws deployment boundary zone during deployment,
 // so the player can see where they are NOT allowed to place troops.
 public class AmbushCenterExclusionMarker : MissionView
 {
@@ -36,14 +33,13 @@ public class AmbushCenterExclusionMarker : MissionView
             center + (-dir + perp) * h,
         ];
 
-        var banner = Mission.AttackerTeam?.Banner;
         for (var i = 0; i < corners.Length; i++)
         {
             var c0 = corners[i];
             var c1 = corners[(i + 1) % corners.Length];
             var start = new Vec3(c0.X, c0.Y, 0f);
             var end = new Vec3(c1.X, c1.Y, 0f);
-            PlaceMarkersAlongSegment(start, end, banner);
+            PlaceMarkersAlongSegment(start, end);
         }
     }
 
@@ -51,7 +47,7 @@ public class AmbushCenterExclusionMarker : MissionView
 
     public override void OnRemoveBehavior() => RemoveMarkers();
 
-    private void PlaceMarkersAlongSegment(Vec3 start, Vec3 end, Banner banner)
+    private void PlaceMarkersAlongSegment(Vec3 start, Vec3 end)
     {
         var delta = end - start;
         var length = delta.Length;
@@ -82,11 +78,7 @@ public class AmbushCenterExclusionMarker : MissionView
             frame.rotation.f = Vec3.CrossProduct(frame.rotation.s, frame.rotation.u);
             frame.rotation.Orthonormalize();
 
-            // Scale
-            // var scale = Vec3.One * 0.4f;
-            // frame.Scale(in scale);
-
-            var entity = SpawnEntity(banner);
+            var entity = SpawnMarkerEntity();
             entity.SetFrame(ref frame);
             _markers.Add(entity);
 
@@ -94,28 +86,13 @@ public class AmbushCenterExclusionMarker : MissionView
         }
     }
 
-    private GameEntity SpawnEntity(Banner banner)
+    private GameEntity SpawnMarkerEntity()
     {
         if (_cachedPrefab == null)
             _cachedPrefab = GameEntity.Instantiate(null, PrefabName, callScriptCallbacks: false);
 
         var entity = GameEntity.CopyFrom(Mission.Scene, _cachedPrefab);
         entity.SetMobility(GameEntity.Mobility.Dynamic);
-
-        if (banner == null)
-            return entity;
-
-        // var mesh = entity.GetFirstMesh();
-        // var mat = mesh.GetMaterial().CreateCopy();
-        // var debugInfo = BannerDebugInfo.CreateManual(nameof(AmbushCenterExclusionMarker));
-        // banner.GetTableauTextureSmall(
-        //     in debugInfo,
-        //     tex =>
-        //     {
-        //         mat.SetTexture(Material.MBTextureType.DiffuseMap2, tex);
-        //     }
-        // );
-        // mesh.SetMaterial(mat);
 
         return entity;
     }
