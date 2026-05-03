@@ -1,0 +1,26 @@
+<Module>
+  <Name value="Ambush Stance"/>
+  <Id value="AmbushStance"/>
+  <Version value="v0.0.1"/>
+  <SingleplayerModule value="true"/>
+  <MultiplayerModule value="false"/>
+  <DependedModules>
+    <DependedModule Id="Native" DependentVersion="v1.4.1"/>
+    <DependedModule Id="SandBoxCore" DependentVersion="v1.4.1"/>
+    <DependedModule Id="Sandbox" DependentVersion="v1.4.1"/>
+    <DependedModule Id="CustomBattle" DependentVersion="v1.4.1"/>
+    <DependedModule Id="StoryMode" DependentVersion="v1.4.1"/>
+  </DependedModules>
+  <SubModules>
+    <SubModule>
+      <Name value="AmbushStance"/>
+      <DLLName value="AmbushStance.dll"/>
+      <SubModuleClassType value="AmbushStance.SubModule"/>
+      <Tags>
+        <Tag key="DedicatedServerType" value="none"/>
+        <Tag key="IsNoRenderModeElement" value="false"/>
+      </Tags>
+    </SubModule>
+  </SubModules>
+  <Xmls/>
+</Module>
