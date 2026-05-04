@@ -21,6 +21,23 @@ public class AmbushCenterExclusionMarker : MissionView
         if (!isFirstPlan || !team.IsPlayerTeam)
             return;
 
+        PlaceExclusionBoundaryMarkers();
+        PlaceMarkersAlongSpawnPath();
+    }
+
+    public override void OnAfterDeploymentFinished() => RemoveMarkers();
+
+    public override void OnRemoveBehavior() => RemoveMarkers();
+
+    public void ReplaceMarkers()
+    {
+        RemoveMarkers();
+        PlaceExclusionBoundaryMarkers();
+        PlaceMarkersAlongSpawnPath();
+    }
+
+    private void PlaceExclusionBoundaryMarkers()
+    {
         AmbushDeploymentHelper.GetEnemySpawnCenter(Mission, out var center, out var dir);
         var h = AmbushDeploymentHelper.CenterExclusionHalfSize;
         var perp = new Vec2(-dir.Y, dir.X);
@@ -43,9 +60,30 @@ public class AmbushCenterExclusionMarker : MissionView
         }
     }
 
-    public override void OnAfterDeploymentFinished() => RemoveMarkers();
+    private void PlaceMarkersAlongSpawnPath()
+    {
+        if (!Mission.IsBattleSpawnPathSelectorInitialized)
+        {
+            InformationManager.DisplayMessage(
+                new InformationMessage("[Err]: Spawn path not initialized!", new Color(1, 0, 0))
+            );
+        }
+        else
+        {
+            var path = Mission.GetInitialSpawnPath();
+            var points = new MatrixFrame[path.NumberOfPoints];
+            path.GetPoints(points);
 
-    public override void OnRemoveBehavior() => RemoveMarkers();
+            for (var i = 0; i < points.Length - 1; i++)
+            {
+                var c0 = points[i].origin;
+                var c1 = points[i + 1].origin;
+                var start = new Vec3(c0.X, c0.Y, 0f);
+                var end = new Vec3(c1.X, c1.Y, 0f);
+                PlaceMarkersAlongSegment(start, end);
+            }
+        }
+    }
 
     private void PlaceMarkersAlongSegment(Vec3 start, Vec3 end)
     {
