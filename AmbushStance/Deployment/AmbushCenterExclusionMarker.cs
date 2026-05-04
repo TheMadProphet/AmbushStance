@@ -23,6 +23,7 @@ public class AmbushCenterExclusionMarker : MissionView
 
         PlaceExclusionBoundaryMarkers();
         PlaceMarkersAlongSpawnPath();
+        AmbushDeploymentHelper.ApplyMarchFormation(Mission);
     }
 
     public override void OnAfterDeploymentFinished() => RemoveMarkers();
@@ -125,6 +126,18 @@ public class AmbushCenterExclusionMarker : MissionView
     }
 
     private GameEntity SpawnMarkerEntity()
+    {
+        if (_cachedPrefab == null)
+            _cachedPrefab = GameEntity.Instantiate(null, PrefabName, callScriptCallbacks: false);
+
+        var entity = GameEntity.CopyFrom(Mission.Scene, _cachedPrefab);
+        entity.SetMobility(GameEntity.Mobility.Dynamic);
+
+        return entity;
+    }
+
+    // Not tracked in _markers — caller manages lifetime.
+    public GameEntity SpawnDebugMarker()
     {
         if (_cachedPrefab == null)
             _cachedPrefab = GameEntity.Instantiate(null, PrefabName, callScriptCallbacks: false);
