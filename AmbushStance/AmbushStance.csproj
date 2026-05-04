@@ -294,11 +294,13 @@
     <Compile Include="Patches\ForceDeploymentScreenPatch.cs"/>
     <Compile Include="Patches\ForcePlayerAsAmbusherPatch.cs"/>
     <Compile Include="Patches\HideMissionDeploymentBoundaryMarker.cs" />
+    <Compile Include="Patches\InjectAmbushSliderOverlayPatch.cs" />
     <Compile Include="Patches\InjectAmbushViewsPatch.cs"/>
     <Compile Include="Patches\ShowEnemyDuringDeploymentPatch.cs"/>
     <Compile Include="Patches\PlayerAgentDeploymentPatch.cs"/>
     <Compile Include="Properties\AssemblyInfo.cs"/>
     <Compile Include="SubModule.cs"/>
+    <Compile Include="ViewModels\AmbushOrderOfBattleOverlayVM.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />

@@ -1,0 +1,47 @@
+<Prefab>
+  <Constants/>
+  <Window>
+    <Widget WidthSizePolicy="StretchToParent" HeightSizePolicy="StretchToParent" DoNotAcceptEvents="true">
+      <Children>
+        <ListPanel WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                   HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                   MarginRight="0" MarginBottom="170"
+                   StackLayout.LayoutMethod="VerticalTopToBottom">
+          <Children>
+
+            <SliderWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="458" SuggestedHeight="42"
+                          VerticalAlignment="Center" Filler="Filler" Handle="SliderHandle" Locked="false"
+                          MaxValueInt="1" MinValueInt="0" ValueFloat="@PathOffset" DoNotPassEventsToChildren="true"
+                          UpdateChildrenStates="true" IsDiscrete="false" DoNotUpdateHandleSize="true">
+              <Children>
+                <ImageWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="482" SuggestedHeight="38"
+                             HorizontalAlignment="Center" VerticalAlignment="Center"
+                             Brush="CustomBattle.Slider.Canvas"/>
+                <ImageWidget Id="Filler" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="465"
+                             SuggestedHeight="35" VerticalAlignment="Center" Brush="CustomBattle.Slider.Fill"
+                             ClipContents="true" UpdateChildrenStates="true">
+                  <Children>
+                    <ImageWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="465"
+                                 SuggestedHeight="35" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                 Brush="CustomBattle.Slider.Fill"/>
+                  </Children>
+                </ImageWidget>
+                <ImageWidget WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="520" SuggestedHeight="65"
+                             HorizontalAlignment="Center" VerticalAlignment="Center" Brush="CustomBattle.Slider.Frame"/>
+                <ImageWidget Id="SliderHandle" WidthSizePolicy="Fixed" HeightSizePolicy="Fixed" SuggestedWidth="14"
+                             SuggestedHeight="38" HorizontalAlignment="Left" VerticalAlignment="Center"
+                             Brush="CustomBattle.Slider.Handle" DoNotAcceptEvents="true" GamepadNavigationIndex="0"/>
+              </Children>
+            </SliderWidget>
+
+            <TextWidget WidthSizePolicy="CoverChildren" HeightSizePolicy="CoverChildren"
+                        HorizontalAlignment="Center" MarginBottom="6"
+                        Text="Ambush Timing"
+                        Brush="OrderOfBattle.FormationItem.TroopCount.Text"/>
+
+          </Children>
+        </ListPanel>
+      </Children>
+    </Widget>
+  </Window>
+</Prefab>
