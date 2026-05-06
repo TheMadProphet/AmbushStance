@@ -1,11 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using TaleWorlds.Core;
 using TaleWorlds.Engine;
 using TaleWorlds.Library;
 using TaleWorlds.MountAndBlade;
-using TaleWorlds.MountAndBlade.Missions.Handlers;
 
 namespace AmbushStance.Deployment;
 
@@ -14,7 +12,7 @@ public static class AmbushDeploymentHelper
     public const float CenterExclusionHalfSize = 30f;
     private const float MarchFormationGap = 5f;
 
-    // Front of column = index 0 (closest to player)
+    // Front of column = index 0 (closest to player). Highest index goes at the rear.
     private static readonly FormationClass[] MarchOrder =
     [
         FormationClass.Bodyguard,
@@ -82,36 +80,24 @@ public static class AmbushDeploymentHelper
         // Probe the valid range by saturating ClampPathOffset at both extremes.
         var spawnPath = mission.GetInitialSpawnPathData(enemyTeam.Side);
         var startOffset = -1e9f;
-        spawnPath.ClampPathOffset(ref startOffset); // → -PivotOffset (path distance = 0)
+        spawnPath.ClampPathOffset(ref startOffset);
         var endOffset = 1e9f;
-        spawnPath.ClampPathOffset(ref endOffset); // → PathLength - PivotOffset (path distance = PathLength)
+        spawnPath.ClampPathOffset(ref endOffset);
         var pathOffset = startOffset + (endOffset - startOffset) * sliderOffset;
 
         var deploymentPlan = mission.DeploymentPlan;
         deploymentPlan.ClearDeploymentPlan(enemyTeam);
         deploymentPlan.MakeDeploymentPlan(enemyTeam, pathOffset);
 
-        mission
-            .GetMissionBehavior<BattleDeploymentHandler>()
-            ?.AutoDeployTeamUsingDeploymentPlan(enemyTeam);
-
+        // Skip AutoDeployTeamUsingDeploymentPlan — it stacks formations side-by-side, but we
+        // want them stacked rear-to-front in a marching column.
         ApplyMarchFormation(mission);
-
-        // AutoDeployTeamUsingDeploymentPlan issues AIControlOff for non-siege battles.
-        // Re-enable it so enemy AI behaves normally when the battle starts.
-        var orderController = enemyTeam.MasterOrderController;
-        orderController.SelectAllFormations();
-        orderController.SetOrder(OrderType.AIControlOn);
-        orderController.ClearSelectedFormations();
     }
 
     public static void ApplyMarchFormation(Mission mission)
     {
         var enemyTeam = mission.PlayerEnemyTeam;
-        if (enemyTeam == null)
-            return;
-
-        if (!mission.IsBattleSpawnPathSelectorInitialized)
+        if (enemyTeam == null || !mission.IsBattleSpawnPathSelectorInitialized)
             return;
 
         var spawnPath = mission.GetInitialSpawnPathData(enemyTeam.Side);
@@ -119,123 +105,88 @@ public static class AmbushDeploymentHelper
         var endOffset = 1e9f;
         spawnPath.ClampPathOffset(ref endOffset);
 
-        // Set column arrangement via the order controller so SetFormationUpdateEnabledAfterSetOrder
-        // batches the change — same pattern AutoDeployTeamUsingDeploymentPlan uses for ArrangementLine.
-        var orderController = enemyTeam.MasterOrderController;
-        orderController.SelectAllFormations();
-        orderController.SetFormationUpdateEnabledAfterSetOrder(false);
-        orderController.SetOrder(OrderType.ArrangementColumn);
-        orderController.SetFormationUpdateEnabledAfterSetOrder(true);
-        orderController.ClearSelectedFormations();
-
-        // Sort front-to-back: Bodyguard (idx 0) first, Ranged (idx 7) last.
+        // Stack from rear toward player: highest march index (Ranged) placed first at currentOffset,
+        // Bodyguard placed last at the head of the column closest to the player.
         var formations = enemyTeam
             .FormationsIncludingEmpty.Where(f => f.CountOfUnits > 0)
-            .OrderBy(f =>
+            .OrderByDescending(f =>
             {
                 var idx = Array.IndexOf(MarchOrder, f.FormationIndex);
-                return idx < 0 ? int.MaxValue : idx;
+                return idx < 0 ? int.MinValue : idx;
             })
             .ToList();
 
-        // SetMovementOrder(Move) + IsTeleportingAgents teleports agents into their column slots.
-        // No Stop at the end — AI overrides the move order when battle starts.
         var wasTeleporting = mission.IsTeleportingAgents;
         mission.IsTeleportingAgents = true;
-
-        // Walk backward along the path (decreasing offset = away from player).
-        // GetSpawnPathFrameFacingTarget handles all path curve math — no manual polyline walking needed.
-        ClearDebugMarkers();
-        spawnPath.GetSpawnPathFrameFacingTarget(
-            currentOffset,
-            endOffset,
-            useTangentDirection: true,
-            out var spawnPos,
-            out var spawnDir
-        );
-        PlaceDebugMarker(mission, new Vec3(spawnPos, 0f), new Vec3(spawnDir, 0f));
 
         var accumulated = 0f;
         foreach (var formation in formations)
         {
-            var width = CalculateColumnWidth(formation);
-            var depth = CalculateColumnDepth(formation);
-            // if (formation.LogicalClass == FormationClass.Cavalry)
-            //     depth = 50f;
-            var sampleOffset = currentOffset - accumulated;
-            spawnPath.ClampPathOffset(ref sampleOffset);
+            var (width, depth, files, distancePlusDiameter, intervalPlusDiameter, diameter) =
+                ComputeColumnLayout(formation);
 
+            // GetSpawnPathFrameFacingTarget returns the formation center; rear sits at
+            // currentOffset + accumulated, so center = rear + depth/2.
+            var centerOffset = currentOffset + accumulated + depth * 0.5f;
+            spawnPath.ClampPathOffset(ref centerOffset);
             spawnPath.GetSpawnPathFrameFacingTarget(
-                sampleOffset,
+                centerOffset,
                 endOffset,
                 useTangentDirection: true,
-                out var pos,
+                out var center,
                 out var dir
             );
-
-            PlaceDebugMarker(mission, new Vec3(pos, 0f), new Vec3(dir, 0f));
 
             var worldPos = new WorldPosition(
                 mission.Scene,
                 UIntPtr.Zero,
-                new Vec3(pos, 0f),
+                new Vec3(center, 0f),
                 hasValidZ: false
             );
-            formation.SetFormOrder(FormOrder.FormOrderCustom(width));
-            formation.SetMovementOrder(MovementOrder.MovementOrderMove(worldPos));
-            formation.SetFacingOrder(FacingOrder.FacingOrderLookAtDirection(dir));
-            formation.ApplyActionOnEachUnitViaBackupList(a =>
-                a.ForceUpdateCachedAndFormationValues(false, true)
-            );
-            formation.SetHasPendingUnitPositions(false);
 
-            // Measure actual depth from agent positions after teleport.
-            // Theoretical depth kept for comparison: depth
-            var minProj = float.MaxValue;
-            var maxProj = float.MinValue;
+            // Configure formation state (arrangement, width, facing, anchor, hold) so when battle
+            // begins the formation system already knows its layout — AI re-takes control with the
+            // correct OrderPosition/Direction/ArrangementOrder.
+            formation.SetArrangementOrder(ArrangementOrder.ArrangementOrderColumn);
+            formation.SetFormOrder(FormOrder.FormOrderCustom(width));
+            formation.SetFacingOrder(FacingOrder.FacingOrderLookAtDirection(dir));
+            formation.SetPositioning(worldPos, dir, formation.ArrangementOrder.GetUnitSpacing());
+            formation.SetMovementOrder(MovementOrder.MovementOrderStop);
+
+            // Place agents directly. We can't use ForceUpdateCachedAndFormationValues here:
+            //   - ColumnFormation.GetWorldPositionOfUnit returns null, so GetOrderPositionOfUnit
+            //     falls through to _movementOrder.CreateNewOrderWorldPositionMT, which is the
+            //     single formation-center point — every agent ends up at the same spot.
+            //   - In Deployment mode, TrySetFormationFrame projects positions onto the team's
+            //     deployment boundaries, clamping out-of-bounds path positions to one boundary
+            //     intersection.
+            // SetFormationFrameDisabled prevents Agent.Tick from re-projecting on subsequent ticks.
+            var perp = new Vec2(-dir.Y, dir.X);
+            var rearCenter = center - dir * (depth - diameter) * 0.5f;
+            var agentIdx = 0;
             formation.ApplyActionOnEachUnit(agent =>
             {
-                var proj = Vec2.DotProduct(agent.Position.AsVec2 - pos, dir);
-                if (proj < minProj) minProj = proj;
-                if (proj > maxProj) maxProj = proj;
+                var file = agentIdx % files;
+                var rank = agentIdx / files;
+                var lateral = (file - (files - 1) / 2f) * intervalPlusDiameter;
+                var forward = rank * distancePlusDiameter;
+                var slot = rearCenter + perp * lateral + dir * forward;
+                var z = 0f;
+                mission.Scene.GetHeightAtPoint(
+                    slot,
+                    BodyFlags.CommonCollisionExcludeFlagsForCombat,
+                    ref z
+                );
+                agent.TeleportToPosition(new Vec3(slot.X, slot.Y, z));
+                agent.SetFormationFrameDisabled();
+                agentIdx++;
             });
-            var realDepth = (minProj < maxProj) ? (maxProj - minProj) : depth;
+            formation.SetHasPendingUnitPositions(false);
 
-            accumulated += realDepth + MarchFormationGap;
+            accumulated += depth + MarchFormationGap;
         }
 
         mission.IsTeleportingAgents = wasTeleporting;
-    }
-
-    private static float CalculateColumnWidth(Formation formation)
-    {
-        var count = formation.CountOfUnits;
-        if (formation.PhysicalClass.IsMounted())
-            return count < 10 ? 6f : 9f + 4f * (count / 20);
-        else
-            return count < 10 ? 4f : 6f + 2f * (count / 25);
-    }
-
-    private static float CalculateColumnDepth(Formation formation)
-    {
-        var isMounted = formation.PhysicalClass.IsMounted();
-        var diameter = Formation.GetDefaultUnitDiameter(isMounted);
-        var spacing = ArrangementOrder.GetUnitSpacingOf(
-            ArrangementOrder.ArrangementOrderEnum.Column
-        );
-        var interval = isMounted
-            ? Formation.CavalryInterval(spacing)
-            : Formation.InfantryInterval(spacing);
-        var distance = isMounted
-            ? Formation.CavalryDistance(spacing)
-            : Formation.InfantryDistance(spacing);
-
-        // var width = CalculateColumnWidth(formation);
-        var width = formation.Width;
-        var files = Math.Max(1, (int)(width / (interval + diameter)));
-        // var ranks = (formation.CountOfUnits + files - 1) / files;
-        var ranks = formation.Arrangement.RankCount;
-        return Math.Max(0f, ranks - 1) * (distance + diameter) + diameter;
     }
 
     public static bool IsInsideCenterExclusion(Vec2 position, Vec2 center, Vec2 dir)
@@ -250,38 +201,42 @@ public static class AmbushDeploymentHelper
             && MathF.Abs(localY) <= CenterExclusionHalfSize;
     }
 
-    private static readonly List<GameEntity> _debugMarkers = [];
-
-    private static void PlaceDebugMarker(Mission mission, Vec3 pos, Vec3 dir)
+    private static float CalculateColumnWidth(Formation formation)
     {
-        var frame = MatrixFrame.Identity;
-        frame.origin = pos;
-        if (
-            !mission.Scene.GetHeightAtPoint(
-                frame.origin.AsVec2,
-                BodyFlags.CommonCollisionExcludeFlagsForCombat,
-                ref frame.origin.z
-            )
-        )
-            frame.origin.z = 0f;
-        frame.origin.z += 1f;
-
-        var direction = dir.NormalizedCopy();
-        var normal = mission.Scene.GetNormalAt(frame.origin.AsVec2);
-        frame.rotation.u = normal;
-        frame.rotation.s = new Vec3(direction.x, direction.y, 0f);
-        frame.rotation.f = Vec3.CrossProduct(frame.rotation.s, frame.rotation.u);
-        frame.rotation.Orthonormalize();
-
-        var entity = mission.GetMissionBehavior<AmbushCenterExclusionMarker>().SpawnDebugMarker();
-        entity.SetFrame(ref frame);
-        _debugMarkers.Add(entity);
+        var count = formation.CountOfUnits;
+        if (formation.PhysicalClass.IsMounted())
+            return count < 10 ? 6f : 9f + 4f * (count / 20);
+        else
+            return count < 10 ? 4f : 6f + 2f * (count / 30);
     }
 
-    private static void ClearDebugMarkers()
+    private static (
+        float width,
+        float depth,
+        int files,
+        float distancePlusDiameter,
+        float intervalPlusDiameter,
+        float diameter
+    ) ComputeColumnLayout(Formation formation)
     {
-        foreach (var e in _debugMarkers)
-            e.Remove(103);
-        _debugMarkers.Clear();
+        var width = CalculateColumnWidth(formation);
+        var isMounted = formation.PhysicalClass.IsMounted();
+        var diameter = Formation.GetDefaultUnitDiameter(isMounted);
+        var spacing = ArrangementOrder.GetUnitSpacingOf(
+            ArrangementOrder.ArrangementOrderEnum.Column
+        );
+        var interval = isMounted
+            ? Formation.CavalryInterval(spacing)
+            : Formation.InfantryInterval(spacing);
+        var distance = isMounted
+            ? Formation.CavalryDistance(spacing)
+            : Formation.InfantryDistance(spacing);
+
+        var intervalPlusDiameter = interval + diameter;
+        var distancePlusDiameter = distance + diameter;
+        var files = Math.Max(1, (int)(width / intervalPlusDiameter));
+        var ranks = (formation.CountOfUnits + files - 1) / files;
+        var depth = Math.Max(0f, ranks - 1) * distancePlusDiameter + diameter;
+        return (width, depth, files, distancePlusDiameter, intervalPlusDiameter, diameter);
     }
 }
