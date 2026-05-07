@@ -291,6 +291,7 @@
     <Compile Include="Deployment\AmbushCenterExclusionMarker.cs"/>
     <Compile Include="Deployment\AmbushDeploymentHelper.cs"/>
     <Compile Include="Patches\CenterExclusionDeploymentPatch.cs"/>
+    <Compile Include="Patches\DeploymentBoundaryBypassPatch.cs"/>
     <Compile Include="Patches\ForceDeploymentScreenPatch.cs"/>
     <Compile Include="Patches\ForcePlayerAsAmbusherPatch.cs"/>
     <Compile Include="Patches\HideMissionDeploymentBoundaryMarker.cs" />

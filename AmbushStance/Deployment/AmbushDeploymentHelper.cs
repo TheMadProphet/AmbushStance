@@ -94,8 +94,31 @@ public static class AmbushDeploymentHelper
         ApplyMarchFormation(mission);
     }
 
+    private const string LogFile = "ambush_debug.log";
+
+    private static void DbgClear()
+    {
+        try
+        {
+            System.IO.File.WriteAllText(LogFile, "");
+        }
+        catch { }
+    }
+
+    private static void Dbg(string m)
+    {
+        try
+        {
+            System.IO.File.AppendAllText(LogFile, m + System.Environment.NewLine);
+        }
+        catch { }
+    }
+
     public static void ApplyMarchFormation(Mission mission)
     {
+        DbgClear();
+        Dbg("=== ApplyMarchFormation ===");
+
         var enemyTeam = mission.PlayerEnemyTeam;
         if (enemyTeam == null || !mission.IsBattleSpawnPathSelectorInitialized)
             return;
@@ -105,88 +128,149 @@ public static class AmbushDeploymentHelper
         var endOffset = 1e9f;
         spawnPath.ClampPathOffset(ref endOffset);
 
-        // Stack from rear toward player: highest march index (Ranged) placed first at currentOffset,
-        // Bodyguard placed last at the head of the column closest to the player.
+        // Iterate front-to-rear: lowest march index (Bodyguard, then cavalry classes...) goes
+        // first and is centered exactly at the slider's currentOffset; subsequent formations
+        // stack behind it (toward lower path offsets).
         var formations = enemyTeam
             .FormationsIncludingEmpty.Where(f => f.CountOfUnits > 0)
-            .OrderByDescending(f =>
+            .OrderBy(f =>
             {
                 var idx = Array.IndexOf(MarchOrder, f.FormationIndex);
-                return idx < 0 ? int.MinValue : idx;
+                return idx < 0 ? int.MaxValue : idx;
             })
             .ToList();
 
         var wasTeleporting = mission.IsTeleportingAgents;
         mission.IsTeleportingAgents = true;
 
-        var accumulated = 0f;
+        // Path offset where the previous formation's rear edge sits. The next formation's
+        // front edge should land MarchFormationGap behind this. Higher path offset = closer
+        // to player (forward); lower offset = behind.
+        var previousRearOffset = 0f;
+        var isFirst = true;
+
         foreach (var formation in formations)
         {
-            var (width, depth, files, distancePlusDiameter, intervalPlusDiameter, diameter) =
-                ComputeColumnLayout(formation);
+            var width = CalculateColumnWidth(formation);
 
-            // GetSpawnPathFrameFacingTarget returns the formation center; rear sits at
-            // currentOffset + accumulated, so center = rear + depth/2.
-            var centerOffset = currentOffset + accumulated + depth * 0.5f;
-            spawnPath.ClampPathOffset(ref centerOffset);
-            spawnPath.GetSpawnPathFrameFacingTarget(
-                centerOffset,
-                endOffset,
-                useTangentDirection: true,
-                out var center,
-                out var dir
+            // First pass: place at any sensible offset just to get agents teleported into the
+            // formation arrangement so we can measure its actual extent.
+            var initialOrderOffset = isFirst
+                ? currentOffset
+                : previousRearOffset - MarchFormationGap;
+            PlaceFormationAt(mission, formation, spawnPath, initialOrderOffset, endOffset, width);
+
+            // maxProj = how far ahead of OrderPosition the front-most agent is (≈ 0 for
+            // TransposedLineFormation, since rank 0 sits AT OrderPosition).
+            // minProj = how far behind OrderPosition the rear-most agent is (≈ -depth).
+            MeasureFormationExtent(formation, out var maxProj, out var minProj, out var diameter);
+            Dbg(
+                $"[Extent] {formation.FormationIndex} maxProj={maxProj:F2} minProj={minProj:F2} diam={diameter:F2}"
             );
 
-            var worldPos = new WorldPosition(
-                mission.Scene,
-                UIntPtr.Zero,
-                new Vec3(center, 0f),
-                hasValidZ: false
-            );
-
-            // Configure formation state (arrangement, width, facing, anchor, hold) so when battle
-            // begins the formation system already knows its layout — AI re-takes control with the
-            // correct OrderPosition/Direction/ArrangementOrder.
-            formation.SetArrangementOrder(ArrangementOrder.ArrangementOrderColumn);
-            formation.SetFormOrder(FormOrder.FormOrderCustom(width));
-            formation.SetFacingOrder(FacingOrder.FacingOrderLookAtDirection(dir));
-            formation.SetPositioning(worldPos, dir, formation.ArrangementOrder.GetUnitSpacing());
-            formation.SetMovementOrder(MovementOrder.MovementOrderStop);
-
-            // Place agents directly. We can't use ForceUpdateCachedAndFormationValues here:
-            //   - ColumnFormation.GetWorldPositionOfUnit returns null, so GetOrderPositionOfUnit
-            //     falls through to _movementOrder.CreateNewOrderWorldPositionMT, which is the
-            //     single formation-center point — every agent ends up at the same spot.
-            //   - In Deployment mode, TrySetFormationFrame projects positions onto the team's
-            //     deployment boundaries, clamping out-of-bounds path positions to one boundary
-            //     intersection.
-            // SetFormationFrameDisabled prevents Agent.Tick from re-projecting on subsequent ticks.
-            var perp = new Vec2(-dir.Y, dir.X);
-            var rearCenter = center - dir * (depth - diameter) * 0.5f;
-            var agentIdx = 0;
-            formation.ApplyActionOnEachUnit(agent =>
+            // Compute corrected OrderPosition (path offset).
+            float correctedOrderOffset;
+            if (isFirst)
             {
-                var file = agentIdx % files;
-                var rank = agentIdx / files;
-                var lateral = (file - (files - 1) / 2f) * intervalPlusDiameter;
-                var forward = rank * distancePlusDiameter;
-                var slot = rearCenter + perp * lateral + dir * forward;
-                var z = 0f;
-                mission.Scene.GetHeightAtPoint(
-                    slot,
-                    BodyFlags.CommonCollisionExcludeFlagsForCombat,
-                    ref z
-                );
-                agent.TeleportToPosition(new Vec3(slot.X, slot.Y, z));
-                agent.SetFormationFrameDisabled();
-                agentIdx++;
-            });
-            formation.SetHasPendingUnitPositions(false);
+                // Geometric center at currentOffset → OrderPos shifted forward by half the
+                // formation's asymmetric extent: OrderPos = currentOffset - (max+min)/2.
+                correctedOrderOffset = currentOffset - (maxProj + minProj) * 0.5f;
+                isFirst = false;
+            }
+            else
+            {
+                // Front edge at (previousRear - gap) → OrderPos = (previousRear - gap) - frontExtent.
+                // frontExtent = maxProj + diameter/2.
+                correctedOrderOffset =
+                    previousRearOffset - MarchFormationGap - (maxProj + diameter * 0.5f);
+            }
+            PlaceFormationAt(mission, formation, spawnPath, correctedOrderOffset, endOffset, width);
 
-            accumulated += depth + MarchFormationGap;
+            // Re-measure (small drift possible after re-placement) and update previousRearOffset.
+            MeasureFormationExtent(formation, out maxProj, out minProj, out diameter);
+            previousRearOffset = correctedOrderOffset + (minProj - diameter * 0.5f);
+            Dbg(
+                $"[Final] {formation.FormationIndex} orderOff={correctedOrderOffset:F2} frontEdge={correctedOrderOffset + maxProj + diameter * 0.5f:F2} rearEdge={previousRearOffset:F2}"
+            );
         }
 
         mission.IsTeleportingAgents = wasTeleporting;
+    }
+
+    private static void PlaceFormationAt(
+        Mission mission,
+        Formation formation,
+        SpawnPathData spawnPath,
+        float centerOffset,
+        float endOffset,
+        float width
+    )
+    {
+        spawnPath.ClampPathOffset(ref centerOffset);
+        spawnPath.GetSpawnPathFrameFacingTarget(
+            centerOffset,
+            endOffset,
+            useTangentDirection: true,
+            out var center,
+            out var dir
+        );
+
+        // hasValidZ:false so GetNavMesh() lazily resolves the navmesh from (X,Y) — required
+        // for Formation.BatchUnitPositions to populate _globalPositions.
+        var worldPos = new WorldPosition(
+            mission.Scene,
+            UIntPtr.Zero,
+            new Vec3(center, 0f),
+            hasValidZ: false
+        );
+
+        formation.SetArrangementOrder(ArrangementOrder.ArrangementOrderColumn);
+        formation.SetFormOrder(FormOrder.FormOrderCustom(width));
+        formation.SetMovementOrder(MovementOrder.MovementOrderMove(worldPos));
+        formation.SetFacingOrder(FacingOrder.FacingOrderLookAtDirection(dir));
+        formation.SetPositioning(worldPos, dir, formation.ArrangementOrder.GetUnitSpacing());
+        formation.ApplyActionOnEachUnit(agent =>
+            agent.ForceUpdateCachedAndFormationValues(
+                updateOnlyMovement: true,
+                arrangementChangeAllowed: false
+            )
+        );
+        formation.SetHasPendingUnitPositions(false);
+        formation.SetMovementOrder(MovementOrder.MovementOrderStop);
+    }
+
+    // Measure the front-to-back extent of agents projected onto the formation's facing direction.
+    // maxProj: how far AHEAD of OrderPosition the front-most agent center is.
+    // minProj: how far BEHIND OrderPosition the rear-most agent center is (negative value).
+    // For TransposedLineFormation: maxProj ≈ 0 (front rank sits at OrderPosition), minProj ≈ -depth.
+    private static void MeasureFormationExtent(
+        Formation formation,
+        out float maxProj,
+        out float minProj,
+        out float diameter
+    )
+    {
+        var dir = formation.Direction;
+        var origin = formation.OrderPosition;
+        var lo = float.MaxValue;
+        var hi = float.MinValue;
+        formation.ApplyActionOnEachUnit(agent =>
+        {
+            var p = Vec2.DotProduct(agent.Position.AsVec2 - origin, dir);
+            if (p < lo)
+                lo = p;
+            if (p > hi)
+                hi = p;
+        });
+        diameter = Formation.GetDefaultUnitDiameter(formation.PhysicalClass.IsMounted());
+        if (lo == float.MaxValue)
+        {
+            maxProj = 0f;
+            minProj = 0f;
+            return;
+        }
+        maxProj = hi;
+        minProj = lo;
     }
 
     public static bool IsInsideCenterExclusion(Vec2 position, Vec2 center, Vec2 dir)
@@ -208,35 +292,5 @@ public static class AmbushDeploymentHelper
             return count < 10 ? 6f : 9f + 4f * (count / 20);
         else
             return count < 10 ? 4f : 6f + 2f * (count / 30);
-    }
-
-    private static (
-        float width,
-        float depth,
-        int files,
-        float distancePlusDiameter,
-        float intervalPlusDiameter,
-        float diameter
-    ) ComputeColumnLayout(Formation formation)
-    {
-        var width = CalculateColumnWidth(formation);
-        var isMounted = formation.PhysicalClass.IsMounted();
-        var diameter = Formation.GetDefaultUnitDiameter(isMounted);
-        var spacing = ArrangementOrder.GetUnitSpacingOf(
-            ArrangementOrder.ArrangementOrderEnum.Column
-        );
-        var interval = isMounted
-            ? Formation.CavalryInterval(spacing)
-            : Formation.InfantryInterval(spacing);
-        var distance = isMounted
-            ? Formation.CavalryDistance(spacing)
-            : Formation.InfantryDistance(spacing);
-
-        var intervalPlusDiameter = interval + diameter;
-        var distancePlusDiameter = distance + diameter;
-        var files = Math.Max(1, (int)(width / intervalPlusDiameter));
-        var ranks = (formation.CountOfUnits + files - 1) / files;
-        var depth = Math.Max(0f, ranks - 1) * distancePlusDiameter + diameter;
-        return (width, depth, files, distancePlusDiameter, intervalPlusDiameter, diameter);
     }
 }
