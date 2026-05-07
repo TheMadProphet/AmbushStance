@@ -288,6 +288,7 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Behaviors\AmbushMarchMissionLogic.cs"/>
     <Compile Include="Deployment\AmbushCenterExclusionMarker.cs"/>
     <Compile Include="Deployment\AmbushDeploymentHelper.cs"/>
     <Compile Include="Patches\CenterExclusionDeploymentPatch.cs"/>
