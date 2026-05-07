@@ -16,6 +16,7 @@ public static class AmbushDeploymentHelper
     private static readonly FormationClass[] MarchOrder =
     [
         FormationClass.Bodyguard,
+        FormationClass.General,
         FormationClass.HeavyCavalry,
         FormationClass.Cavalry,
         FormationClass.HorseArcher,
@@ -132,7 +133,7 @@ public static class AmbushDeploymentHelper
         // first and is centered exactly at the slider's currentOffset; subsequent formations
         // stack behind it (toward lower path offsets).
         var formations = enemyTeam
-            .FormationsIncludingEmpty.Where(f => f.CountOfUnits > 0)
+            .FormationsIncludingSpecialAndEmpty.Where(f => f.CountOfUnits > 0)
             .OrderBy(f =>
             {
                 var idx = Array.IndexOf(MarchOrder, f.FormationIndex);
