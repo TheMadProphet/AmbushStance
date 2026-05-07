@@ -229,6 +229,13 @@ public static class AmbushDeploymentHelper
         formation.SetMovementOrder(MovementOrder.MovementOrderMove(worldPos));
         formation.SetFacingOrder(FacingOrder.FacingOrderLookAtDirection(dir));
         formation.SetPositioning(worldPos, dir, formation.ArrangementOrder.GetUnitSpacing());
+
+        // Run the strongest-front swap. Each call is a single bubble-sort pass,
+        // so iterate enough times to fully converge
+        var passes = formation.Arrangement.RankCount + 2;
+        for (var i = 0; i < passes; i++)
+            formation.Arrangement.OnTickOccasionally();
+
         formation.ApplyActionOnEachUnit(agent =>
             agent.ForceUpdateCachedAndFormationValues(
                 updateOnlyMovement: true,
