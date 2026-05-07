@@ -3,7 +3,9 @@ using System.Linq;
 using TaleWorlds.Core;
 using TaleWorlds.Engine;
 using TaleWorlds.Library;
+using TaleWorlds.ModuleManager;
 using TaleWorlds.MountAndBlade;
+using Path = System.IO.Path;
 
 namespace AmbushStance.Deployment;
 
@@ -95,13 +97,16 @@ public static class AmbushDeploymentHelper
         ApplyMarchFormation(mission);
     }
 
-    private const string LogFile = "ambush_debug.log";
+    private static readonly string LogPath = Path.Combine(
+        ModuleHelper.GetModuleFullPath("AmbushStance"),
+        "ambush_deployment.log"
+    );
 
     private static void DbgClear()
     {
         try
         {
-            System.IO.File.WriteAllText(LogFile, "");
+            System.IO.File.WriteAllText(LogPath, "");
         }
         catch { }
     }
@@ -110,7 +115,7 @@ public static class AmbushDeploymentHelper
     {
         try
         {
-            System.IO.File.AppendAllText(LogFile, m + System.Environment.NewLine);
+            System.IO.File.AppendAllText(LogPath, m + System.Environment.NewLine);
         }
         catch { }
     }
