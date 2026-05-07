@@ -296,6 +296,10 @@ public static class AmbushDeploymentHelper
     private static float CalculateColumnWidth(Formation formation)
     {
         var count = formation.CountOfUnits;
+
+        if (count == 1)
+            return 1f;
+
         if (formation.PhysicalClass.IsMounted())
             return count < 10 ? 6f : 9f + 4f * (count / 20);
         else
