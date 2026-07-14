@@ -13,7 +13,7 @@ namespace AmbushStance.Patches;
 // Fix: after the base sets Controller = None, flip it to AI. The second call to this
 // method at deployment end is a no-op in the original (flag already set), so the agent's
 // controller will be Player at that point and the condition below won't fire.
-[HarmonyPatch(typeof(DeploymentMissionController), "OnAgentControllerSetToPlayer")]
+[HarmonyPatch(typeof(MissionBehavior), "OnAgentControllerSetToPlayer")]
 internal class PlayerAgentDeploymentPatch
 {
     static void Postfix(Agent agent)
